@@ -3,60 +3,62 @@ Package rpio provides GPIO access on the Raspberry PI without any need
 for external c libraries (eg. WiringPi or BCM2835).
 
 Supports simple operations such as:
-       - Pin mode/direction (input/output/clock/pwm,alt0,alt1,alt2,alt3,alt4,alt5)
-       - Pin write (high/low)
-       - Pin read (high/low)
-       - Pin edge detection (no/rise/fall/any)
-       - Pull up/down/off
+  - Pin mode/direction (input/output/clock/pwm,alt0,alt1,alt2,alt3,alt4,alt5)
+  - Pin write (high/low)
+  - Pin read (high/low)
+  - Pin edge detection (no/rise/fall/any)
+  - Pull up/down/off
+
 Also clock/pwm related oparations:
-       - Set Clock frequency
-       - Set Duty cycle
+  - Set Clock frequency
+  - Set Duty cycle
+
 And SPI oparations:
-       - SPI transmit/recieve/exchange bytes
-       - Set speed
-       - Chip select
+  - SPI transmit/recieve/exchange bytes
+  - Set speed
+  - Chip select
 
 Example of use:
 
-       rpio.Open()
-       defer rpio.Close()
+	rpio.Open()
+	defer rpio.Close()
 
-       pin := rpio.Pin(4)
-       pin.Output()
+	pin := rpio.Pin(4)
+	pin.Output()
 
-       for {
-           pin.Toggle()
-           time.Sleep(time.Second)
-       }
+	for {
+	    pin.Toggle()
+	    time.Sleep(time.Second)
+	}
 
 The library use the raw BCM2835 pinouts, not the ports as they are mapped
 on the output pins for the raspberry pi, and not the wiringPi convention.
 
-            Rev 2 and 3 Raspberry Pi                        Rev 1 Raspberry Pi (legacy)
-  +-----+---------+----------+---------+-----+      +-----+--------+----------+--------+-----+
-  | BCM |   Name  | Physical | Name    | BCM |      | BCM | Name   | Physical | Name   | BCM |
-  +-----+---------+----++----+---------+-----+      +-----+--------+----++----+--------+-----+
-  |     |    3.3v |  1 || 2  | 5v      |     |      |     | 3.3v   |  1 ||  2 | 5v     |     |
-  |   2 |   SDA 1 |  3 || 4  | 5v      |     |      |   0 | SDA    |  3 ||  4 | 5v     |     |
-  |   3 |   SCL 1 |  5 || 6  | 0v      |     |      |   1 | SCL    |  5 ||  6 | 0v     |     |
-  |   4 | GPIO  7 |  7 || 8  | TxD     | 14  |      |   4 | GPIO 7 |  7 ||  8 | TxD    |  14 |
-  |     |      0v |  9 || 10 | RxD     | 15  |      |     | 0v     |  9 || 10 | RxD    |  15 |
-  |  17 | GPIO  0 | 11 || 12 | GPIO  1 | 18  |      |  17 | GPIO 0 | 11 || 12 | GPIO 1 |  18 |
-  |  27 | GPIO  2 | 13 || 14 | 0v      |     |      |  21 | GPIO 2 | 13 || 14 | 0v     |     |
-  |  22 | GPIO  3 | 15 || 16 | GPIO  4 | 23  |      |  22 | GPIO 3 | 15 || 16 | GPIO 4 |  23 |
-  |     |    3.3v | 17 || 18 | GPIO  5 | 24  |      |     | 3.3v   | 17 || 18 | GPIO 5 |  24 |
-  |  10 |    MOSI | 19 || 20 | 0v      |     |      |  10 | MOSI   | 19 || 20 | 0v     |     |
-  |   9 |    MISO | 21 || 22 | GPIO  6 | 25  |      |   9 | MISO   | 21 || 22 | GPIO 6 |  25 |
-  |  11 |    SCLK | 23 || 24 | CE0     | 8   |      |  11 | SCLK   | 23 || 24 | CE0    |   8 |
-  |     |      0v | 25 || 26 | CE1     | 7   |      |     | 0v     | 25 || 26 | CE1    |   7 |
-  |   0 |   SDA 0 | 27 || 28 | SCL 0   | 1   |      +-----+--------+----++----+--------+-----+
-  |   5 | GPIO 21 | 29 || 30 | 0v      |     |
-  |   6 | GPIO 22 | 31 || 32 | GPIO 26 | 12  |
-  |  13 | GPIO 23 | 33 || 34 | 0v      |     |
-  |  19 | GPIO 24 | 35 || 36 | GPIO 27 | 16  |
-  |  26 | GPIO 25 | 37 || 38 | GPIO 28 | 20  |
-  |     |      0v | 39 || 40 | GPIO 29 | 21  |
-  +-----+---------+----++----+---------+-----+
+	          Rev 2 and 3 Raspberry Pi                        Rev 1 Raspberry Pi (legacy)
+	+-----+---------+----------+---------+-----+      +-----+--------+----------+--------+-----+
+	| BCM |   Name  | Physical | Name    | BCM |      | BCM | Name   | Physical | Name   | BCM |
+	+-----+---------+----++----+---------+-----+      +-----+--------+----++----+--------+-----+
+	|     |    3.3v |  1 || 2  | 5v      |     |      |     | 3.3v   |  1 ||  2 | 5v     |     |
+	|   2 |   SDA 1 |  3 || 4  | 5v      |     |      |   0 | SDA    |  3 ||  4 | 5v     |     |
+	|   3 |   SCL 1 |  5 || 6  | 0v      |     |      |   1 | SCL    |  5 ||  6 | 0v     |     |
+	|   4 | GPIO  7 |  7 || 8  | TxD     | 14  |      |   4 | GPIO 7 |  7 ||  8 | TxD    |  14 |
+	|     |      0v |  9 || 10 | RxD     | 15  |      |     | 0v     |  9 || 10 | RxD    |  15 |
+	|  17 | GPIO  0 | 11 || 12 | GPIO  1 | 18  |      |  17 | GPIO 0 | 11 || 12 | GPIO 1 |  18 |
+	|  27 | GPIO  2 | 13 || 14 | 0v      |     |      |  21 | GPIO 2 | 13 || 14 | 0v     |     |
+	|  22 | GPIO  3 | 15 || 16 | GPIO  4 | 23  |      |  22 | GPIO 3 | 15 || 16 | GPIO 4 |  23 |
+	|     |    3.3v | 17 || 18 | GPIO  5 | 24  |      |     | 3.3v   | 17 || 18 | GPIO 5 |  24 |
+	|  10 |    MOSI | 19 || 20 | 0v      |     |      |  10 | MOSI   | 19 || 20 | 0v     |     |
+	|   9 |    MISO | 21 || 22 | GPIO  6 | 25  |      |   9 | MISO   | 21 || 22 | GPIO 6 |  25 |
+	|  11 |    SCLK | 23 || 24 | CE0     | 8   |      |  11 | SCLK   | 23 || 24 | CE0    |   8 |
+	|     |      0v | 25 || 26 | CE1     | 7   |      |     | 0v     | 25 || 26 | CE1    |   7 |
+	|   0 |   SDA 0 | 27 || 28 | SCL 0   | 1   |      +-----+--------+----++----+--------+-----+
+	|   5 | GPIO 21 | 29 || 30 | 0v      |     |
+	|   6 | GPIO 22 | 31 || 32 | GPIO 26 | 12  |
+	|  13 | GPIO 23 | 33 || 34 | 0v      |     |
+	|  19 | GPIO 24 | 35 || 36 | GPIO 27 | 16  |
+	|  26 | GPIO 25 | 37 || 38 | GPIO 28 | 20  |
+	|     |      0v | 39 || 40 | GPIO 29 | 21  |
+	+-----+---------+----++----+---------+-----+
 
 See the spec for full details of the BCM2835 controller:
 
@@ -64,7 +66,6 @@ https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2835/BCM2835-A
 and https://elinux.org/BCM2835_datasheet_errata - for errors in that spec
 
 Changes to support the BCM2711, used on the Raspberry Pi 4, were cribbed from https://github.com/RPi-Distro/raspi-gpio/
-
 */
 package rpio
 
@@ -552,10 +553,11 @@ func PullMode(pin Pin, pull Pull) {
 // Note that some pins share the same clock source, it means that
 // changing frequency for one pin will change it also for all pins within a group.
 // The groups are:
-//   gp_clk0: pins 4, 20, 32, 34
-//   gp_clk1: pins 5, 21, 42, 44
-//   gp_clk2: pins 6 and 43
-//   pwm_clk: pins 12, 13, 18, 19, 40, 41, 45
+//
+//	gp_clk0: pins 4, 20, 32, 34
+//	gp_clk1: pins 5, 21, 42, 44
+//	gp_clk2: pins 6 and 43
+//	pwm_clk: pins 12, 13, 18, 19, 40, 41, 45
 func SetFreq(pin Pin, freq int) {
 	// TODO: would be nice to choose best clock source depending on target frequency, oscilator is used for now
 	sourceFreq := 19200000 // oscilator frequency
@@ -622,23 +624,24 @@ func SetFreq(pin Pin, freq int) {
 
 // SetDutyCycle: Set cycle length (range) and duty length (data) for Pwm pin in M/S mode
 //
-//   |<- duty ->|
-//    __________
-//  _/          \_____________/
-//   |<------- cycle -------->|
+//	 |<- duty ->|
+//	  __________
+//	_/          \_____________/
+//	 |<------- cycle -------->|
 //
 // Output frequency is computed as pwm clock frequency divided by cycle length.
 // So, to set Pwm pin to freqency 38kHz with duty cycle 1/4, use this combination:
 //
-//  pin.Pwm()
-//  pin.DutyCycle(1, 4)
-//  pin.Freq(38000*4)
+//	pin.Pwm()
+//	pin.DutyCycle(1, 4)
+//	pin.Freq(38000*4)
 //
 // Note that some pins share common pwm channel,
 // so calling this function will set same duty cycle for all pins belonging to channel.
 // The channels are:
-//   channel 1 (pwm0) for pins 12, 18, 40
-//   channel 2 (pwm1) for pins 13, 19, 41, 45.
+//
+//	channel 1 (pwm0) for pins 12, 18, 40
+//	channel 2 (pwm1) for pins 13, 19, 41, 45.
 //
 // NOTE without root permission this function will simply do nothing successfully
 func SetDutyCycle(pin Pin, dutyLen, cycleLen uint32) {
@@ -746,6 +749,13 @@ func Open() (err error) {
 	file, err = os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, os.ModePerm)
 	if os.IsPermission(err) { // try gpiomem otherwise (some extra functions like clock and pwm setting wont work)
 		file, err = os.OpenFile("/dev/gpiomem", os.O_RDWR|os.O_SYNC, os.ModePerm)
+		if err != nil {
+			// Probably Raspberry Pi 5 then
+			file, err = os.OpenFile("/dev/gpiomem0", os.O_RDWR|os.O_SYNC, os.ModePerm)
+			if err != nil {
+				return
+			}
+		}
 	}
 	if err != nil {
 		return
