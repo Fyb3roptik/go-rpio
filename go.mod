@@ -1,3 +1,3 @@
-module github.com/stianeikeland/go-rpio/v4
+module github.com/Fyb3roptik/go-rpio/v4
 
 go 1.15
