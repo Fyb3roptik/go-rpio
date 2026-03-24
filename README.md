@@ -3,7 +3,7 @@ go-rpio
 
 Native GPIO-Gophers for your Pi!
 
-**Documentation:** [![GoDoc](https://pkg.go.dev/badge/github.com/stianeikeland/go-rpio)](https://pkg.go.dev/github.com/stianeikeland/go-rpio/v4)
+**Documentation:** [![GoDoc](https://pkg.go.dev/badge/github.com/Fyb3roptik/go-rpio)](https://pkg.go.dev/github.com/Fyb3roptik/go-rpio/v5)
 
 go-rpio is a Go library for accessing [GPIO](http://elinux.org/Rpi_Low-level_peripherals)-pins
 on the [Raspberry Pi](https://en.wikipedia.org/wiki/Raspberry_Pi).
@@ -26,17 +26,15 @@ There's a tiny bit of additional information over at my [blog](https://blog.eike
 - 4.4.0 - Support for disabling interrupts (workaround for #35), by @drahoslove
 - 4.5.0 - Improve rpi 4 support, by @wfd3
 - 4.6.0 - Adds Balanced PWM mode, by @youngkin
+- 5.0.0 - Raspberry Pi 5 (RP1) support; module path `.../go-rpio/v5`
 
 ## Usage ##
 
 ```go
-import "github.com/stianeikeland/go-rpio/v4"
+import "github.com/Fyb3roptik/go-rpio/v5"
 ```
 
-If you're using an older go.mod incompatible you should instead use:
-```go
-import "github.com/stianeikeland/go-rpio"
-```
+For v4 of this fork (or upstream `stianeikeland/go-rpio/v4`), import that module path instead.
 
 Open memory range for GPIO access in /dev/mem
 
