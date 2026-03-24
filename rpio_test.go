@@ -8,12 +8,35 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	println("Note: bcm pins 2 and 3 has to be directly connected")
+	println("On-Pi tests: TestSmoke needs only sudo. TestEvent needs BCM GPIO 2 and 3 jumpered.")
 	if err := Open(); err != nil {
 		panic(err)
 	}
 	defer Close()
 	os.Exit(m.Run())
+}
+
+// TestSmoke is the quick on-device check: mmap OK, and on Pi 5+root SpiBegin works.
+// No jumper wires. Run: sudo go test -v -run TestSmoke
+func TestSmoke(t *testing.T) {
+	t.Run("gpio_mapped", func(t *testing.T) {
+		if gpioMem == nil || len(gpioMem) == 0 {
+			t.Fatal("gpioMem not mapped after Open (wrong device or permissions?)")
+		}
+		t.Logf("GPIO mapped: %d words, isRP1=%v rp1FullBar=%v", len(gpioMem), isRP1, rp1FullBar)
+	})
+	t.Run("spi_begin_when_rp1_full_bar", func(t *testing.T) {
+		if !isRP1 {
+			t.Skip("SPI smoke only relevant on Raspberry Pi 5 (RP1)")
+		}
+		if !rp1FullBar {
+			t.Skip("RP1 SPI needs full PCIe BAR — run as root so Open uses /dev/mem, not only gpiomem0")
+		}
+		if err := SpiBegin(Spi0); err != nil {
+			t.Fatalf("SpiBegin(Spi0): %v", err)
+		}
+		SpiEnd(Spi0)
+	})
 }
 
 func TestInterrupt(t *testing.T) {
