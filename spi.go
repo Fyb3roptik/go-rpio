@@ -34,6 +34,9 @@ var (
 //
 // Note that you should disable SPI interface in raspi-config first!
 func SpiBegin(dev SpiDev) error {
+	if isRP1 {
+		return rp1SpiBegin(dev)
+	}
 	spiMem[csReg] = 0 // reset spi settings to default
 	if spiMem[csReg] == 0 {
 		// this should not read only zeroes after reset -> mem map failed
@@ -51,6 +54,13 @@ func SpiBegin(dev SpiDev) error {
 
 // SpiEnd: Sets SPI pins of given device to default (Input) mode. See SpiBegin.
 func SpiEnd(dev SpiDev) {
+	if isRP1 {
+		rp1SpiEnd(dev)
+		for _, pin := range getSpiPins(dev) {
+			pin.Mode(Input)
+		}
+		return
+	}
 	var pins = getSpiPins(dev)
 	for _, pin := range pins {
 		pin.Mode(Input)
@@ -61,6 +71,10 @@ func SpiEnd(dev SpiDev) {
 // Param speed may be as big as 125MHz in theory, but
 // only values up to 31.25MHz are considered relayable.
 func SpiSpeed(speed int) {
+	if isRP1 {
+		rp1SpiSpeed(speed)
+		return
+	}
 	coreFreq := 250 * 1000000
 	if isBCM2711() {
 		coreFreq = 550 * 1000000
@@ -72,6 +86,10 @@ func SpiSpeed(speed int) {
 // SpiChipSelect: Select chip, one of 0, 1, 2
 // for selecting slave on CE0, CE1, or CE2 pin
 func SpiChipSelect(chip uint8) {
+	if isRP1 {
+		rp1SpiChipSelect(chip)
+		return
+	}
 	const csMask = 3 // chip select has 2 bits
 
 	cs := uint32(chip & csMask)
@@ -82,6 +100,10 @@ func SpiChipSelect(chip uint8) {
 // SpiChipSelectPolarity: Sets polarity (0/1) of active chip select
 // default active=0
 func SpiChipSelectPolarity(chip uint8, polarity uint8) {
+	if isRP1 {
+		rp1SpiChipSelectPolarity(chip, polarity)
+		return
+	}
 	if chip > 2 {
 		return
 	}
@@ -97,6 +119,10 @@ func SpiChipSelectPolarity(chip uint8, polarity uint8) {
 // SpiMode: Set polarity (0/1) and phase (0/1) of spi clock
 // default polarity=0; phase=0
 func SpiMode(polarity uint8, phase uint8) {
+	if isRP1 {
+		rp1SpiMode(polarity, phase)
+		return
+	}
 	const cpol = 1 << 3
 	const cpha = 1 << 2
 
@@ -135,6 +161,11 @@ func SpiReceive(n int) []byte {
 //
 // If you want to only send or only receive, use SpiTransmit/SpiReceive
 func SpiExchange(data []byte) {
+	if isRP1 {
+		rp1SpiClearFifo()
+		rp1SpiExchange(data)
+		return
+	}
 	const ta = 1 << 7   // transfer active
 	const txd = 1 << 18 // tx fifo can accept data
 	const rxd = 1 << 17 // rx fifo contains data

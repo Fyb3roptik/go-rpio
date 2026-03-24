@@ -8,7 +8,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	println("Note: bcm pins 2 and 3 has to be directly connected")
+	println("On-Pi tests: TestSmoke needs only sudo. TestEvent needs BCM GPIO 2 and 3 jumpered.")
 	if err := Open(); err != nil {
 		panic(err)
 	}
@@ -16,7 +16,33 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// TestSmoke is the quick on-device check: mmap OK, and on Pi 5+root SpiBegin works.
+// No jumper wires. Run: sudo go test -v -run TestSmoke
+func TestSmoke(t *testing.T) {
+	t.Run("gpio_mapped", func(t *testing.T) {
+		if gpioMem == nil || len(gpioMem) == 0 {
+			t.Fatal("gpioMem not mapped after Open (wrong device or permissions?)")
+		}
+		t.Logf("GPIO mapped: %d words, isRP1=%v rp1FullBar=%v", len(gpioMem), isRP1, rp1FullBar)
+	})
+	t.Run("spi_begin_when_rp1_full_bar", func(t *testing.T) {
+		if !isRP1 {
+			t.Skip("SPI smoke only relevant on Raspberry Pi 5 (RP1)")
+		}
+		if !rp1FullBar {
+			t.Skip("RP1 SPI needs full PCIe BAR — run as root so Open uses /dev/mem, not only gpiomem0")
+		}
+		if err := SpiBegin(Spi0); err != nil {
+			t.Fatalf("SpiBegin(Spi0): %v", err)
+		}
+		SpiEnd(Spi0)
+	})
+}
+
 func TestInterrupt(t *testing.T) {
+	if isRP1 {
+		t.Skip("BCM IRQ controller not mapped on Raspberry Pi 5 (RP1)")
+	}
 	logIrqRegs(t)
 	EnableIRQs(1 << 49)
 	EnableIRQs(1 << 50)
@@ -164,6 +190,9 @@ func TestEvent(t *testing.T) {
 }
 
 func BenchmarkGpio(b *testing.B) {
+	if isRP1 {
+		b.Skip("legacy BCM register indices in benchmark not valid on RP1")
+	}
 	src := Pin(3)
 	src.Mode(Output)
 	src.Low()
@@ -236,6 +265,10 @@ func BenchmarkGpio(b *testing.B) {
 }
 
 func logIrqRegs(t *testing.T) {
+	if isRP1 || intrMem8 == nil || len(intrMem8) < 0x228 {
+		t.Log("IRQ regs: (skipped — unavailable on RP1)")
+		return
+	}
 	fmt.Printf("PENDING(% X) FIQ(% X) ENAB(% X) DISAB(% X)\n",
 		intrMem8[0x200:0x20C],
 		intrMem8[0x20C:0x210],

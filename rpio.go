@@ -66,6 +66,11 @@ https://www.raspberrypi.org/documentation/hardware/raspberrypi/bcm2835/BCM2835-A
 and https://elinux.org/BCM2835_datasheet_errata - for errors in that spec
 
 Changes to support the BCM2711, used on the Raspberry Pi 4, were cribbed from https://github.com/RPi-Distro/raspi-gpio/
+
+Raspberry Pi 5 uses the RP1 southbridge. Running as root, Open() memory-maps the
+full RP1 PCIe BAR (4 MiB) so SPI (DesignWare), PWM, and GPIO edge detection work.
+/dev/gpiomem0 only exposes the GPIO window; SpiBegin then returns ErrRP1GPIOOnly.
+
 */
 package rpio
 
@@ -115,6 +120,11 @@ var (
 	intrBase int64
 
 	irqsBackup uint64
+
+	// isRP1 is true when using Raspberry Pi 5 (RP1) GPIO registers via
+	// /dev/gpiomem0 or /dev/mem at the RP1 GPIO window. Legacy BCM2835/BCM2711
+	// mmap path leaves this false.
+	isRP1 bool
 )
 
 func init() {
@@ -271,6 +281,11 @@ func (pin Pin) PullOff() {
 }
 
 func (pin Pin) ReadPull() Pull {
+	if isRP1 {
+		memlock.Lock()
+		defer memlock.Unlock()
+		return rp1ReadPull(pin)
+	}
 	if !isBCM2711() {
 		return PullNone // Can't read pull-up/pull-down state on other Pi boards
 	}
@@ -306,6 +321,12 @@ func (pin Pin) EdgeDetected() bool {
 //
 // Spi mode should not be set by this directly, use SpiBegin instead.
 func PinMode(pin Pin, mode Mode) {
+	if isRP1 {
+		memlock.Lock()
+		defer memlock.Unlock()
+		rp1PinMode(pin, mode)
+		return
+	}
 
 	// Pin fsel register, 0 or 1 depending on bank
 	fselReg := uint8(pin) / 10
@@ -382,6 +403,13 @@ func PinMode(pin Pin, mode Mode) {
 // WritePin sets a given pin High or Low
 // by setting the clear or set registers respectively
 func WritePin(pin Pin, state State) {
+	if isRP1 {
+		memlock.Lock()
+		rp1WritePin(pin, state)
+		memlock.Unlock()
+		return
+	}
+
 	p := uint8(pin)
 
 	// Set register, 7 / 8 depending on bank
@@ -401,6 +429,13 @@ func WritePin(pin Pin, state State) {
 
 // ReadPin reads the state of a pin
 func ReadPin(pin Pin) State {
+	if isRP1 {
+		memlock.Lock()
+		s := rp1ReadPin(pin)
+		memlock.Unlock()
+		return s
+	}
+
 	// Input level register offset (13 / 14 depending on bank)
 	levelReg := uint8(pin)/32 + 13
 
@@ -413,6 +448,13 @@ func ReadPin(pin Pin) State {
 
 // TogglePin: Toggle a pin state (high -> low -> high)
 func TogglePin(pin Pin) {
+	if isRP1 {
+		memlock.Lock()
+		rp1TogglePin(pin)
+		memlock.Unlock()
+		return
+	}
+
 	p := uint8(pin)
 
 	setReg := p/32 + 7
@@ -446,6 +488,12 @@ func TogglePin(pin Pin) {
 // WARNING: this might make your Pi unresponsive, if this happens, you should either run the code as root,
 // or add `dtoverlay=gpio-no-irq` to `/boot/config.txt` and restart your pi,
 func DetectEdge(pin Pin, edge Edge) {
+	if isRP1 {
+		memlock.Lock()
+		rp1DetectEdge(pin, edge)
+		memlock.Unlock()
+		return
+	}
 	if edge != NoEdge {
 		// disable GPIO event interruption to prevent freezing in some cases
 		DisableIRQs(1<<49 | 1<<52) // gpio_int[0] and gpio_int[3]
@@ -483,6 +531,13 @@ func DetectEdge(pin Pin, edge Edge) {
 //
 // Event detection has to be enabled first, by pin.Detect(edge)
 func EdgeDetected(pin Pin) bool {
+	if isRP1 {
+		memlock.Lock()
+		v := rp1EdgeDetected(pin)
+		memlock.Unlock()
+		return v
+	}
+
 	p := uint8(pin)
 
 	// Event detect status register (16/17)
@@ -497,6 +552,11 @@ func PullMode(pin Pin, pull Pull) {
 
 	memlock.Lock()
 	defer memlock.Unlock()
+
+	if isRP1 {
+		rp1PullMode(pin, pull)
+		return
+	}
 
 	if isBCM2711() {
 		pullreg := GPPUPPDN0 + (pin >> 4)
@@ -559,6 +619,17 @@ func PullMode(pin Pin, pull Pull) {
 //	gp_clk2: pins 6 and 43
 //	pwm_clk: pins 12, 13, 18, 19, 40, 41, 45
 func SetFreq(pin Pin, freq int) {
+	if isRP1 {
+		switch pin {
+		case 12, 13, 18, 19, 40, 41, 45:
+			memlock.Lock()
+			rp1SetFreqPWM(pin, freq)
+			memlock.Unlock()
+		default:
+			// GPCLK on Pi 5 needs RP1 clocks block (0x18000); not implemented here.
+		}
+		return
+	}
 	// TODO: would be nice to choose best clock source depending on target frequency, oscilator is used for now
 	sourceFreq := 19200000 // oscilator frequency
 	if isBCM2711() {
@@ -656,6 +727,12 @@ func SetDutyCycle(pin Pin, dutyLen, cycleLen uint32) {
 //
 // NOTE without root permission this function will simply do nothing successfully
 func SetDutyCycleWithPwmMode(pin Pin, dutyLen, cycleLen uint32, mode bool) {
+	if isRP1 {
+		memlock.Lock()
+		defer memlock.Unlock()
+		rp1SetDutyCycleWithPwmMode(pin, dutyLen, cycleLen, mode)
+		return
+	}
 	const pwmCtlReg = 0
 	var (
 		pwmDatReg uint
@@ -702,6 +779,12 @@ func SetDutyCycleWithPwmMode(pin Pin, dutyLen, cycleLen uint32, mode bool) {
 
 // StopPwm: Stop pwm for both channels
 func StopPwm() {
+	if isRP1 {
+		memlock.Lock()
+		rp1StopPwm()
+		memlock.Unlock()
+		return
+	}
 	const pwmCtlReg = 0
 	const pwen = 1
 	pwmMem[pwmCtlReg] &^= pwen<<8 | pwen
@@ -709,6 +792,12 @@ func StopPwm() {
 
 // StartPwm starts pwm for both channels
 func StartPwm() {
+	if isRP1 {
+		memlock.Lock()
+		rp1StartPwm()
+		memlock.Unlock()
+		return
+	}
 	const pwmCtlReg = 0
 	const pwen = 1
 	pwmMem[pwmCtlReg] |= pwen<<8 | pwen
@@ -718,6 +807,9 @@ func StartPwm() {
 // See 'ARM peripherals interrupts table' in pheripherals datasheet.
 // WARNING: you can corrupt your system, only use this if you know what you are doing.
 func EnableIRQs(irqs uint64) {
+	if isRP1 {
+		return
+	}
 	const irqEnable1 = 0x210 / 4
 	const irqEnable2 = 0x214 / 4
 	intrMem[irqEnable1] = uint32(irqs)       // IRQ 0..31
@@ -728,6 +820,9 @@ func EnableIRQs(irqs uint64) {
 // See 'ARM peripherals interrupts table' in pheripherals datasheet.
 // WARNING: you can corrupt your system, only use this if you know what you are doing.
 func DisableIRQs(irqs uint64) {
+	if isRP1 {
+		return
+	}
 	const irqDisable1 = 0x21C / 4
 	const irqDisable2 = 0x220 / 4
 	intrMem[irqDisable1] = uint32(irqs)       // IRQ 0..31
@@ -735,70 +830,143 @@ func DisableIRQs(irqs uint64) {
 }
 
 func backupIRQs() {
+	if isRP1 {
+		irqsBackup = 0
+		return
+	}
 	const irqEnable1 = 0x210 / 4
 	const irqEnable2 = 0x214 / 4
 	irqsBackup = uint64(intrMem[irqEnable2])<<32 | uint64(intrMem[irqEnable1])
 }
 
+// detectRP1Hardware reports whether this kernel/device tree is a Pi 5-class
+// board (BCM2712 + RP1 GPIO). Used to pick /dev/mem offset and /dev/gpiomem0.
+func detectRP1Hardware() bool {
+	compat, err := os.ReadFile("/proc/device-tree/compatible")
+	if err == nil && bytes.Contains(compat, []byte("bcm2712")) {
+		return true
+	}
+	model, err := os.ReadFile("/proc/device-tree/model")
+	if err != nil {
+		return false
+	}
+	model = bytes.TrimRight(model, "\x00")
+	return bytes.Contains(model, []byte("Pi 5")) ||
+		bytes.Contains(model, []byte("Compute Module 5")) ||
+		bytes.Contains(model, []byte("Raspberry Pi 500"))
+}
+
+// openBCMLegacy maps BCM2835/BCM2711 peripherals (GPIO, clk, pwm, spi, irq)
+// the same way as before Raspberry Pi 5 support.
+func openBCMLegacy(fd uintptr) (err error) {
+	isRP1 = false
+	gpioMem, gpioMem8, err = memMap(fd, gpioBase)
+	if err != nil {
+		return err
+	}
+	clkMem, clkMem8, err = memMap(fd, clkBase)
+	if err != nil {
+		return err
+	}
+	pwmMem, pwmMem8, err = memMap(fd, pwmBase)
+	if err != nil {
+		return err
+	}
+	spiMem, spiMem8, err = memMap(fd, spiBase)
+	if err != nil {
+		return err
+	}
+	intrMem, intrMem8, err = memMap(fd, intrBase)
+	if err != nil {
+		return err
+	}
+	backupIRQs()
+	return nil
+}
+
+// openRP1 maps RP1 (Pi 5). fullBar=true (root /dev/mem) maps the entire 4 MiB BAR
+// so SPI and PWM work; fullBar=false (/dev/gpiomem0) maps GPIO only.
+func openRP1(fd uintptr, fullBar bool) (err error) {
+	isRP1 = false
+	rp1FullBar = false
+	rp1Bar8 = nil
+	rp1BarU32 = nil
+	rp1SpiActive = nil
+
+	if fullBar {
+		rp1Bar8, err = syscall.Mmap(int(fd), rp1BarPhys, rp1BarLength,
+			syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if err != nil {
+			return err
+		}
+		rp1BarU32 = bytesToUint32Slice(rp1Bar8)
+		g0 := rp1GPIOChipOff / 4
+		gl := rp1GPIOChipBytes / 4
+		gpioMem = rp1BarU32[g0 : g0+gl]
+		gpioMem8 = rp1Bar8[rp1GPIOChipOff : rp1GPIOChipOff+rp1GPIOChipBytes]
+		rp1FullBar = true
+	} else {
+		gpioMem, gpioMem8, err = memMapSized(fd, 0, rp1MapBytes)
+		if err != nil {
+			return err
+		}
+		rp1Bar8 = gpioMem8
+		rp1BarU32 = bytesToUint32Slice(gpioMem8)
+		rp1FullBar = false
+	}
+	isRP1 = true
+	const dummyWords = 1024
+	clkMem = make([]uint32, dummyWords)
+	clkMem8 = nil
+	pwmMem = make([]uint32, dummyWords)
+	pwmMem8 = nil
+	spiMem = make([]uint32, dummyWords)
+	spiMem8 = nil
+	intrMem = make([]uint32, dummyWords)
+	intrMem8 = nil
+	irqsBackup = 0
+	return nil
+}
+
 // Open and memory map GPIO memory range from /dev/mem .
 // Some reflection magic is used to convert it to a unsafe []uint32 pointer
 func Open() (err error) {
-	var file *os.File
-
-	// Open fd for rw mem access; try dev/mem first (need root)
-	file, err = os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, os.ModePerm)
-	if os.IsPermission(err) { // try gpiomem otherwise (some extra functions like clock and pwm setting wont work)
-		file, err = os.OpenFile("/dev/gpiomem", os.O_RDWR|os.O_SYNC, os.ModePerm)
-		if err != nil {
-			// Probably Raspberry Pi 5 then
-			file, err = os.OpenFile("/dev/gpiomem0", os.O_RDWR|os.O_SYNC, os.ModePerm)
-			if err != nil {
-				return
-			}
-		}
-	}
-	if err != nil {
-		return
-	}
-	// FD can be closed after memory mapping
-	defer file.Close()
-
 	memlock.Lock()
 	defer memlock.Unlock()
 
-	// Memory map GPIO registers to slice
-	gpioMem, gpioMem8, err = memMap(file.Fd(), gpioBase)
-	if err != nil {
-		return
+	rp1Board := detectRP1Hardware()
+
+	// 1) /dev/mem (root): Pi 5 uses RP1 GPIO physical base; older Pis use soc GPIO base from device tree.
+	file, err := os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, os.ModePerm)
+	if err == nil {
+		defer file.Close()
+		if rp1Board {
+			return openRP1(file.Fd(), true)
+		}
+		return openBCMLegacy(file.Fd())
+	}
+	if !os.IsPermission(err) {
+		return err
 	}
 
-	// Memory map clock registers to slice
-	clkMem, clkMem8, err = memMap(file.Fd(), clkBase)
-	if err != nil {
-		return
+	// 2) /dev/gpiomem — Pi 2–4 (and earlier); unchanged behavior.
+	file, err = os.OpenFile("/dev/gpiomem", os.O_RDWR|os.O_SYNC, os.ModePerm)
+	if err == nil {
+		defer file.Close()
+		return openBCMLegacy(file.Fd())
 	}
 
-	// Memory map pwm registers to slice
-	pwmMem, pwmMem8, err = memMap(file.Fd(), pwmBase)
-	if err != nil {
-		return
+	// 3) /dev/gpiomem0 — Pi 5 (no legacy /dev/gpiomem). Also if gpiomem is missing (ENOENT) on unknown boards.
+	if rp1Board || os.IsNotExist(err) {
+		file, err = os.OpenFile("/dev/gpiomem0", os.O_RDWR|os.O_SYNC, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		return openRP1(file.Fd(), false)
 	}
 
-	// Memory map spi registers to slice
-	spiMem, spiMem8, err = memMap(file.Fd(), spiBase)
-	if err != nil {
-		return
-	}
-
-	// Memory map interruption registers to slice
-	intrMem, intrMem8, err = memMap(file.Fd(), intrBase)
-	if err != nil {
-		return
-	}
-
-	backupIRQs() // back up enabled IRQs, to restore it later
-
-	return nil
+	return err
 }
 
 func memMap(fd uintptr, base int64) (mem []uint32, mem8 []byte, err error) {
@@ -820,17 +988,65 @@ func memMap(fd uintptr, base int64) (mem []uint32, mem8 []byte, err error) {
 	return
 }
 
+func memMapSized(fd uintptr, base int64, length int) (mem []uint32, mem8 []byte, err error) {
+	mem8, err = syscall.Mmap(
+		int(fd),
+		base,
+		length,
+		syscall.PROT_READ|syscall.PROT_WRITE,
+		syscall.MAP_SHARED,
+	)
+	if err != nil {
+		return
+	}
+	header := *(*reflect.SliceHeader)(unsafe.Pointer(&mem8))
+	header.Len /= (32 / 8)
+	header.Cap /= (32 / 8)
+	mem = *(*[]uint32)(unsafe.Pointer(&header))
+	return
+}
+
 // Close unmaps GPIO memory
 func Close() error {
-	EnableIRQs(irqsBackup) // Return IRQs to state where it was before - just to be nice
+	if !isRP1 {
+		EnableIRQs(irqsBackup) // Return IRQs to state where it was before - just to be nice
+	}
 
 	memlock.Lock()
 	defer memlock.Unlock()
+
+	if isRP1 {
+		if len(rp1Bar8) > 0 {
+			if err := syscall.Munmap(rp1Bar8); err != nil {
+				return err
+			}
+		}
+		rp1Bar8, rp1BarU32 = nil, nil
+		rp1SpiActive = nil
+		rp1FullBar = false
+		gpioMem, gpioMem8 = nil, nil
+		clkMem, clkMem8 = nil, nil
+		pwmMem, pwmMem8 = nil, nil
+		spiMem, spiMem8 = nil, nil
+		intrMem, intrMem8 = nil, nil
+		isRP1 = false
+		return nil
+	}
+
 	for _, mem8 := range [][]uint8{gpioMem8, clkMem8, pwmMem8, spiMem8, intrMem8} {
+		if len(mem8) == 0 {
+			continue
+		}
 		if err := syscall.Munmap(mem8); err != nil {
 			return err
 		}
 	}
+	gpioMem, gpioMem8 = nil, nil
+	clkMem, clkMem8 = nil, nil
+	pwmMem, pwmMem8 = nil, nil
+	spiMem, spiMem8 = nil, nil
+	intrMem, intrMem8 = nil, nil
+	isRP1 = false
 	return nil
 }
 
@@ -880,5 +1096,8 @@ func getBase() int64 {
 // The Pi 4 uses a BCM 2711, which has different register offsets and base addresses than the rest of the Pi family (so far).  This
 // helper function checks if we're on a 2711 and hence a Pi 4
 func isBCM2711() bool {
+	if isRP1 || len(gpioMem) <= GPPUPPDN3 {
+		return false
+	}
 	return gpioMem[GPPUPPDN3] != 0x6770696f
 }
